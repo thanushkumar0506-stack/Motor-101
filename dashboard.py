@@ -1,48 +1,37 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
+import serial
 
-# Page setup
-st.set_page_config(page_title="Predictive Maintenance Dashboard", layout="wide")
+# Thresholds for anomaly detection
+VIBRATION_LIMIT = 5.0  # g-force threshold
 
-st.title("🛠️ Predictive Maintenance Dashboard")
-st.markdown("Monitor motor health using sensor trends and AI-based diagnostics.")
+st.title("📡 Live Vibration Dashboard (ADXL345)")
 
-# Upload CSV
-uploaded_file = st.file_uploader("Upload sensor data CSV", type="csv")
+# Connect to Arduino (adjust COM port if needed)
+ser = serial.Serial('COM4', 9600)
 
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
+data = []
+placeholder = st.empty()
 
-    # Show raw data
-    with st.expander("📄 Raw Data"):
-        st.dataframe(df)
+while True:
+    line = ser.readline().decode('utf-8').strip()
+    if line and not line.startswith("Time"):
+        parts = line.split(',')
+        if len(parts) == 4:  # Time, X, Y, Z
+            data.append(parts)
+            if len(data) > 200:  # keep last 200 readings
+                data = data[-200:]
 
-    # Plot trends
-    st.subheader("📈 Sensor Trends Over Time")
-    fig, axs = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
+            df = pd.DataFrame(data, columns=["Time (min)", "Accel_X", "Accel_Y", "Accel_Z"])
+            df = df.astype(float)
 
-    axs[0].plot(df["Time (s)"], df["Temperature (°C)"], color='red')
-    axs[0].set_ylabel("Temperature (°C)")
-    axs[0].grid(True)
+            with placeholder.container():
+                st.line_chart(df[["Accel_X", "Accel_Y", "Accel_Z"]])
 
-    axs[1].plot(df["Time (s)"], df["Current (A)"], color='blue')
-    axs[1].set_ylabel("Current (A)")
-    axs[1].grid(True)
+                # Anomaly detection
+                latest_x = df["Accel_X"].iloc[-1]
+                latest_y = df["Accel_Y"].iloc[-1]
+                latest_z = df["Accel_Z"].iloc[-1]
 
-    axs[2].plot(df["Time (s)"], df["Vibration"], color='green')
-    axs[2].set_ylabel("Vibration")
-    axs[2].set_xlabel("Time (s)")
-    axs[2].grid(True)
-
-    st.pyplot(fig)
-
-    # Show AI alerts
-    st.subheader("⚠️ AI-Detected Anomalies")
-    alerts = df[df["AI Alert"].notna()][["Time (s)", "AI Alert"]]
-    if not alerts.empty:
-        st.dataframe(alerts)
-    else:
-        st.success("No anomalies detected in the uploaded data.")
-else:
-    st.info("Upload a CSV file to begin.")
+                if abs(latest_x) > VIBRATION_LIMIT or abs(latest_y) > VIBRATION_LIMIT or abs(latest_z) > VIBRATION_LIMIT:
+                    st.error("⚠️ Vibration anomaly detected! Possible causes: imbalance, misalignment, loose parts, or bearing wear.")
