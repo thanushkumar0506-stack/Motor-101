@@ -2,31 +2,20 @@ import streamlit as st
 import pandas as pd
 import serial
 import time
+import winsound  # for beep alarm
 
 VIBRATION_LIMIT = 5.0
 ALARM_INTERVAL = 30
 
 st.title("📡 Live Vibration Dashboard (ADXL345)")
-
-# Try opening COM4 safely
-try:
-    ser = serial.Serial('COM4', 9600, timeout=1)
-except serial.SerialException as e:
-    st.error(f"❌ Could not open COM4: {e}")
-    st.stop()
+ser = serial.Serial('COM4', 9600)
 
 data = []
 last_alarm_time = 0
-placeholder_chart = st.empty()
-placeholder_table = st.empty()
+placeholder = st.empty()
 
 while True:
-    try:
-        line = ser.readline().decode('utf-8').strip()
-    except Exception as e:
-        st.error(f"❌ Serial read error: {e}")
-        break
-
+    line = ser.readline().decode('utf-8').strip()
     if line and not line.startswith("Time"):
         parts = line.split(',')
         if len(parts) == 4:
@@ -34,33 +23,22 @@ while True:
             if len(data) > 200:
                 data = data[-200:]
 
-            # Build DataFrame
             df = pd.DataFrame(data, columns=["Time (min)", "Accel_X", "Accel_Y", "Accel_Z"])
             df = df.astype(float)
 
-            # Add Comment column
-            df["Comment"] = ""
-
-            latest_x = df["Accel_X"].iloc[-1]
-            latest_y = df["Accel_Y"].iloc[-1]
-            latest_z = df["Accel_Z"].iloc[-1]
-
-            # Anomaly detection
-            if abs(latest_x) > VIBRATION_LIMIT or abs(latest_y) > VIBRATION_LIMIT or abs(latest_z) > VIBRATION_LIMIT:
-                current_time = time.time()
-                if current_time - last_alarm_time > ALARM_INTERVAL:
-                    comment = "⚠️ Vibration anomaly detected! Possible causes: imbalance, misalignment, loose parts, or bearing wear."
-                    st.error(comment)
-                    df.loc[df.index[-1], "Comment"] = comment
-                    last_alarm_time = current_time
-
-            # --- Show chart ---
-            with placeholder_chart.container():
+            with placeholder.container():
                 st.line_chart(df[["Accel_X", "Accel_Y", "Accel_Z"]])
 
-            # --- Show table ---
-            with placeholder_table.container():
-                st.subheader("📋 Data Log with Anomaly Comments")
-                st.dataframe(df)
-    
+                latest_x = df["Accel_X"].iloc[-1]
+                latest_y = df["Accel_Y"].iloc[-1]
+                latest_z = df["Accel_Z"].iloc[-1]
+
+                if abs(latest_x) > VIBRATION_LIMIT or abs(latest_y) > VIBRATION_LIMIT or abs(latest_z) > VIBRATION_LIMIT:
+                    current_time = time.time()
+                    if current_time - last_alarm_time > ALARM_INTERVAL:
+                        # 🔔 Sound alarm
+                        winsound.Beep(1000, 500)
+                        st.error("⚠️ Vibration anomaly detected! Possible imbalance, misalignment, or bearing wear.")
+                        last_alarm_time = current_time
+
     time.sleep(1)
