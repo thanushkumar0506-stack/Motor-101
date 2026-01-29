@@ -17,7 +17,8 @@ except serial.SerialException as e:
 
 data = []
 last_alarm_time = 0
-placeholder = st.empty()
+placeholder_chart = st.empty()
+placeholder_table = st.empty()
 
 while True:
     try:
@@ -33,20 +34,33 @@ while True:
             if len(data) > 200:
                 data = data[-200:]
 
+            # Build DataFrame
             df = pd.DataFrame(data, columns=["Time (min)", "Accel_X", "Accel_Y", "Accel_Z"])
             df = df.astype(float)
 
-            with placeholder.container():
+            # Add Comment column
+            df["Comment"] = ""
+
+            latest_x = df["Accel_X"].iloc[-1]
+            latest_y = df["Accel_Y"].iloc[-1]
+            latest_z = df["Accel_Z"].iloc[-1]
+
+            # Anomaly detection
+            if abs(latest_x) > VIBRATION_LIMIT or abs(latest_y) > VIBRATION_LIMIT or abs(latest_z) > VIBRATION_LIMIT:
+                current_time = time.time()
+                if current_time - last_alarm_time > ALARM_INTERVAL:
+                    comment = "⚠️ Vibration anomaly detected! Possible causes: imbalance, misalignment, loose parts, or bearing wear."
+                    st.error(comment)
+                    df.loc[df.index[-1], "Comment"] = comment
+                    last_alarm_time = current_time
+
+            # --- Show chart ---
+            with placeholder_chart.container():
                 st.line_chart(df[["Accel_X", "Accel_Y", "Accel_Z"]])
 
-                latest_x = df["Accel_X"].iloc[-1]
-                latest_y = df["Accel_Y"].iloc[-1]
-                latest_z = df["Accel_Z"].iloc[-1]
-
-                if abs(latest_x) > VIBRATION_LIMIT or abs(latest_y) > VIBRATION_LIMIT or abs(latest_z) > VIBRATION_LIMIT:
-                    current_time = time.time()
-                    if current_time - last_alarm_time > ALARM_INTERVAL:
-                        st.error("⚠️ Vibration anomaly detected! Possible causes: imbalance, misalignment, loose parts, or bearing wear.")
-                        last_alarm_time = current_time
-
+            # --- Show table ---
+            with placeholder_table.container():
+                st.subheader("📋 Data Log with Anomaly Comments")
+                st.dataframe(df)
+    
     time.sleep(1)
